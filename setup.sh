@@ -500,7 +500,7 @@ config_template='{
       },
       {
         "type": "field",
-        "domain": ["geosite:category-gov-ru", "domain:ru"],
+        "domain": ["geosite:category-ads-all", "geosite:category-gov-ru", "domain:ru"],
         "outboundTag": "block"
       },
       {
