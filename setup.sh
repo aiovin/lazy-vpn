@@ -1,5 +1,10 @@
 #!/bin/bash
-trap 'echo -e "\033[31mSomething went wrong on line $LINENO.\033[0m"; exit 1' ERR
+trap 'echo -e "\033[31mПроизошла ошибка на строке $LINENO.\033[0m"; exit 1' ERR
+
+if ! [ -d "/run/systemd/system" ] || ! [ "$(ps -p 1 -o comm=)" = "systemd" ]; then
+    echo "Ошибка: Скрипт предназначен для систем на основе systemd (Ubuntu/Debian)."
+    exit 1
+fi
 
 # Скрипт требует права root т.к. работает с установкой пакетов как и xray при установке из скрипта
 if [ "$(id -u)" -ne 0 ]; then
