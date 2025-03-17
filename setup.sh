@@ -89,7 +89,7 @@ steal_sni() {
       "gosuslugi.ru" "cloudflare.com" "vk.ru"
       "telegram.org" "t.me" "whatsapp.com"
       "store.steampowered.com" "github.com"
-      "microsoft.com" "microsoft.ru"
+      "microsoft.com" "microsoft.ru" "example.com"
   )
   while true; do
       read -p "Введите адрес сайта для маскировки (SNI): " sni
