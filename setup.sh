@@ -1,5 +1,5 @@
 #!/bin/bash
-trap 'echo -e "\033[31mПроизошла ошибка на строке $LINENO.\033[0m"; exit 1' ERR
+trap 'echo -e "\033[31mПроизошла ошибка на строке $LINENO.\033[0m\n"; exit 1' ERR
 
 if ! [ -d "/run/systemd/system" ] || ! [ "$(ps -p 1 -o comm=)" = "systemd" ]; then
     echo "Ошибка: Скрипт предназначен для систем на основе systemd (Ubuntu/Debian)."
@@ -108,8 +108,7 @@ steal_sni() {
           echo -e "Ошибка: Этот SNI запрещен.\n"
           continue
       fi
-      sni=($sni:443)
-      sni_dest=$sni
+      sni_dest="${sni}:443"
       break
   done
 echo
@@ -152,15 +151,26 @@ setup_caddy() {
         echo -e "Удалено 'www' из SNI. Будет использовано: $sni\n"
       fi
       break
-  done
+    done
 
     # Проверка DNS записей
-    SERVER_IP=$(curl -Ls ident.me)
     echo -n "Проверяем DNS-запись для $sni.. "
-    DNS_IP=$(dig +short $sni @8.8.8.8)
 
-    if [ "$DNS_IP" != "$SERVER_IP" ]; then
-      echo "ВНИМАНИЕ: DNS-запись для $sni не указывает на IP сервера ($SERVER_IP)"
+    SERVER_IPV4=$(curl -4 -Ls --max-time 4 ident.me || true)
+    SERVER_IPV6=$(curl -6 -Ls --max-time 4 ident.me || true)
+
+    # Проверка A записи (IPv4)
+    DNS_IPV4=$(dig +short A $sni @8.8.8.8)
+
+    # Проверка AAAA записи (IPv6)
+    DNS_IPV6=$(dig +short AAAA $sni @8.8.8.8)
+
+    # Объединяем результаты, если есть и IPv4, и IPv6
+    DNS_IP=$(echo -e "$DNS_IPV4\n$DNS_IPV6" | grep -v '^$' | tr '\n' ' ')
+
+    # Проверяем, совпадает ли хотя бы один из IP-адресов сервера с DNS-записями
+    if [[ ! "$DNS_IP" =~ "$SERVER_IPV4" ]] && [[ ! "$DNS_IP" =~ "$SERVER_IPV6" ]]; then
+      echo -e "\nВНИМАНИЕ: DNS-запись для $sni не указывает на IP сервера (IPv4: $SERVER_IPV4, IPv6: $SERVER_IPV6)"
       DNS_IP=${DNS_IP:-none}
       echo "Найденный(е) IP в DNS: $DNS_IP"
       read -p "Вы уверены, что хотите продолжить? (y/N) " -n 1 -r
@@ -169,7 +179,7 @@ setup_caddy() {
         exit 1
       fi
     fi
-    echo "Успех."
+    echo "Успешно."
 
     # Проверяем, установлен ли Caddy
     if command -v caddy &>/dev/null; then
@@ -344,7 +354,7 @@ EOF
 choose_setup() {
   local default_choice=3
 
-  echo "Выберите вариант настройки xray core:"
+  echo -e "Выберите вариант настройки xray core:\n"
   echo "1) Steal from yourself (Настроить веб-сервер Caddy)"
   echo "2) Steal from yourself (Веб сервер уже настроен)"
   echo -e "3) Использовать чужой SNI\n"
@@ -364,7 +374,7 @@ choose_setup() {
 
 # Начало работы скрипта
 choose_setup
-echo "Начинаем настройку конфига xray (vless reality)."
+echo -e "Начинаем настройку конфига xray (vless reality).\n"
 
 # Генерация публичного и приватного ключа
 priv_and_pub_keys=$(xray x25519)
@@ -379,7 +389,7 @@ sid=$(openssl rand -hex 8)
 main_uuid=$(xray uuid)
 
 # Спрашиваем сколько генерировать дополнительных конфигов
-read -p "Укажите сколько требуется дополнительных ссылок на подключение (Enter для '1' - это минимум): " uuid_count
+read -p "Укажите сколько потребуется дополнительных ссылок на подключение (Enter для '1' - это минимум): " uuid_count
 if [[ -z "$uuid_count" ]]; then
     uuid_count=1
 fi
@@ -404,14 +414,130 @@ if ! touch /var/log/xray/access.log /var/log/xray/error.log; then
     exit 1
 fi
 
-# Спрашиваем интерфейс для того, что если на сервере статичный только IPv6 то 0.0.0.0 не подойдет
-read -p "Введите интерфейст для прослушиванием Xray (Enter для '0.0.0.0'): " listen_ip
-if [[ -z "$listen_ip" ]]; then listen_ip="0.0.0.0"; fi
+### СОЗДАНИЕ XRAY КОНФИГА ###
 
-ident_me=$(curl -Ls ident.me 2>/dev/null)
-# Спашиваем для того, что если на сервере и IPv4 и IPv6 но статичный только один из них, то ident.me может вернуть не тот что надо
-read -p "Введите публичный статичный IP сервера (Enter для '$ident_me'): " public_ip
-if [[ -z "$public_ip" ]]; then public_ip=$ident_me; fi
+### Настройка правил
+
+read -p "Добавить правило для блокировки BitTorrent? [Y/n]: " block_bittorrent
+block_bittorrent=${block_bittorrent:-y}
+if [[ "$block_bittorrent" =~ ^[Yy]$ ]]; then
+    echo -e "Правило для блокировки BitTorrent будет добавлено.\n"
+    block_bittorrent="yes"
+else
+    echo -e "Правило для блокировки BitTorrent добавлено не будет.\n"
+    block_bittorrent="no"
+fi
+
+###
+
+read -p "Настроить WARP (для использования в правилах)? [y/N]: " setup_warp
+setup_warp=${setup_warp:-n}
+
+if [[ "$setup_warp" =~ ^[Yy]$ ]]; then
+    echo -e "\nНастройка WARP:"
+    read -p "Введите secretKey: " secretKey_var
+    while [[ -z "$secretKey_var" ]]; do read -p "Повторите ввод: " secretKey_var; done
+    read -p "Введите IPv4 адрес: " address_4
+    while [[ -z "$address_4" ]]; do read -p "Повторите ввод: " address_4; done
+    read -p "Введите IPv6 адрес: " address_6
+    while [[ -z "$address_6" ]]; do read -p "Повторите ввод: " address_6; done
+    read -p "Введите endpoint: " endpoint_var
+    while [[ -z "$endpoint_var" ]]; do read -p "Повторите ввод: " endpoint_var; done
+    read -p "Введите publicKey: " publicKey_var
+    while [[ -z "$publicKey_var" ]]; do read -p "Повторите ввод: " publicKey_var; done
+    echo "Новый outbound успешно создан: WARP"
+    warp_configured="yes"
+else
+    warp_configured="no"
+fi
+echo
+
+###
+
+read -p "Создать правило для RU трафика (block/warp)? [Y/n]: " create_ru_rule
+create_ru_rule=${create_ru_rule:-y}
+
+if [[ "$create_ru_rule" =~ ^[Yy]$ ]]; then
+    read -p "Выберите тип правила (block/warp. Enter для - 'block'): " rule_type
+    rule_type=${rule_type:-block}
+    if [[ "$rule_type" != "block" && "$rule_type" != "warp" ]]; then
+        echo -e "\033[31mОшибка: неверный тип правила. Используется значение по умолчанию - 'block'.\033[0m"
+        rule_type="block"
+    fi
+    if [[ "$rule_type" == "warp" && "$warp_configured" == "no" ]]; then
+        echo -e "\033[31mОшибка: Вы не настроили WARP. Используется значение по умолчанию - 'block'.\033[0m"
+        rule_type="block"
+    fi
+    echo "RU трафик будет отправлен в: $rule_type"
+else
+    echo -e "Правило для RU трафика создано не будет."
+    rule_type="none"
+fi
+echo
+
+###
+
+read -p "Желаете добавить домены которые будут заблокированы? (Эта хрень неработает) [y/N]: " block_custom_domains
+block_custom_domains=${block_custom_domains:-n}
+if [[ "$block_custom_domains" =~ ^[Yy]$ ]]; then
+    echo -e "Правило для блокировки доменов будет добавлено."
+    read -p "Введите домены (через пробел): " custom_warp_domains
+    if [[ -n "$domains_to_block" ]]; then
+        # Преобразуем введенные домены в массив JSON
+        domains_to_block_json=$(echo "$domains_to_block" | jq -R 'split(" ")')
+    else
+        domains_to_block_json="[]"
+    fi
+else
+    echo -e "Правило для блокировки доменов добавлено не будет."
+fi
+
+###
+
+if [[ "$warp_configured" == "yes" ]]; then
+    echo
+    read -p "Желаете добавить домены, которые будут отправлены в WARP? [y/N]: " warp_custom_domains
+    warp_custom_domains=${warp_custom_domains:-n}
+
+    if [[ "$warp_custom_domains" =~ ^[Yy]$ ]]; then
+        echo -e "Дополнительное правило для WARP будет добавлено."
+        read -p "Введите домены (через пробел): " custom_warp_domains
+
+        if [[ -n "$custom_warp_domains" ]]; then
+            # Преобразуем введенные домены в массив JSON
+            warp_domains_json=$(echo "$custom_warp_domains" | jq -R 'split(" ")')
+        else
+            warp_domains_json="[]"
+        fi
+    else
+        echo -e "Дополнительных правил для WARP добавлено не будет."
+    fi
+fi
+
+### Конец настройки правил
+echo
+
+# Спрашиваем интерфейс для того, что если на сервере статичный только IPv6 то 0.0.0.0 не подойдет
+read -p "Введите интерфейст для прослушиванием Xray (Enter для '0.0.0.0'. Для IPv6 используйте '::'): " listen_ip
+if [[ -z "$listen_ip" ]]; then listen_ip="0.0.0.0"; fi
+echo "Xray будет слушать: $listen_ip"
+
+# Ищем публичные ip адреса для формирования ссылки на подключение
+echo -e "\nНужно выбрать статичный IP-адрес сервера для формирования ссылки на подключение:"
+echo "Найденные публичные IP-адреса:"
+
+echo -n "1) IPv4: "
+ipv4=$(curl -4 -Ls --max-time 4 ident.me 2>/dev/null) || true
+if [[ -z "$ipv4" ]]; then echo; else echo $ipv4; fi
+
+echo -n "2) IPv6: "
+ipv6=$(curl -6 -Ls --max-time 4 ident.me 2>/dev/null) || true
+if [[ -z "$ipv6" ]]; then echo; else echo $ipv6; fi
+
+read -p "Укажите статичный IP-адреса сервера (Enter для '$ipv4', '2' для IPv6): " public_ip
+if [[ -z "$public_ip" ]] || [[ "$public_ip" == "1" ]]; then public_ip=$ipv4; fi
+if [[ "$public_ip" == "2" ]]; then public_ip=$ipv6; fi
+echo -e "Выбраный IP: $public_ip\n"
 
 host=$(hostname)
 read -p "Введите примечание для ссылок на подключение (Enter для '$host'): " remark
@@ -446,7 +572,7 @@ config_template='{
   },
   "inbounds": [
     {
-      "listen": "[ur_listen_ip]",
+      "listen": "ur_listen_ip",
       "port": 443,
       "protocol": "vless",
       "tag": "reality-in",
@@ -495,17 +621,7 @@ config_template='{
     "rules": [
       {
         "type": "field",
-        "protocol": "bittorrent",
-        "outboundTag": "block"
-      },
-      {
-        "type": "field",
-        "domain": ["geosite:category-ads-all", "geosite:category-gov-ru", "domain:ru"],
-        "outboundTag": "block"
-      },
-      {
-        "type": "field",
-        "ip": ["geoip:ru"],
+        "domain": ["geosite:category-ads-all"],
         "outboundTag": "block"
       }
     ],
@@ -524,19 +640,122 @@ config=$(echo "$config_template" | sed \
 # Вставка массива клиентов в конфиг
 config=$(echo "$config" | jq --argjson clients "$clients_json" '.inbounds[0].settings.clients = $clients')
 
+### КОНФИГУРАЦИЯ ПРАВИЛ ###
+
+# Добавляем правило для блокировки BitTorrent если выбрано да
+if [[ "$block_bittorrent" == "yes" ]]; then
+    config=$(echo "$config" | jq '.routing.rules += [
+        {
+            "type": "field",
+            "protocol": "bittorrent",
+            "outboundTag": "block"
+        }
+    ]')
+fi
+
+# Добавляем правило для блокировки доменов, если они указаны
+if [[ "$block_custom_domains" =~ ^[Yy]$ && -n "$domains_to_block" ]]; then
+    config=$(echo "$config" | jq --argjson domains_to_block "$domains_to_block_json" '
+        .routing.rules += [
+            {
+                "type": "field",
+                "domain": $domains_to_block,
+                "outboundTag": "block"
+            }
+        ]
+    ')
+fi
+
+# Добавляем правило с дополнительными доменами для warp, если они указаны
+if [[ "$warp_configured" == "yes" && -n "$custom_warp_domains" ]]; then
+    config=$(echo "$config" | jq --argjson domains "$warp_domains_json" '
+        .routing.rules += [
+            {
+                "type": "field",
+                "domain": $domains,
+                "outboundTag": "warp"
+            }
+        ]
+    ')
+fi
+
+# Добавляем правила для RU трафика если выбрано да
+if [[ "$create_ru_rule" =~ ^[Yy]$ ]]; then
+    config=$(echo "$config" | jq --arg rule_type "$rule_type" '.routing.rules += [
+        {
+            "type": "field",
+            "domain": ["geosite:category-gov-ru", "domain:ru"],
+            "outboundTag": $rule_type
+        },
+        {
+            "type": "field",
+            "ip": ["geoip:ru"],
+            "outboundTag": $rule_type
+        }
+    ]')
+fi
+
+# Добавляем WARP в outbounds, если он настроен
+if [[ "$warp_configured" == "yes" ]]; then
+    config=$(echo "$config" | jq --arg secretKey "$secretKey_var" \
+                                  --arg address_4 "$address_4" \
+                                  --arg address_6 "$address_6" \
+                                  --arg endpoint "$endpoint_var" \
+                                  --arg publicKey "$publicKey_var" \
+        '.outbounds += [
+            {
+                "protocol": "wireguard",
+                "tag": "warp",
+                "settings": {
+                    "secretKey": $secretKey,
+                    "address": [$address_4, $address_6],
+                    "peers": [
+                        {
+                            "endpoint": $endpoint,
+                            "publicKey": $publicKey
+                        }
+                    ],
+                    "mtu": 1280,
+                    "reserved": "WPM9",
+                    "workers": 2,
+                    "domainStrategy": "ForceIP"
+                }
+            }
+        ]')
+fi
+
+### КОНЕЦ КОНФИГУРАЦИИ ПРАВИЛ ###
+
+config_file="/usr/local/etc/xray/config.json"
+
+# Проверка существования конфига и что он не дефолтный
+if [[ -f "$config_file" && $(wc -c < "$config_file") -gt 3 ]]; then
+    echo -e "\nКонфиг уже существует"
+    read -p "Создать Backup текущего конфига? [Y/n]: " make_backup
+    make_backup=${make_backup:-y}
+
+    if [[ "$make_backup" =~ ^[Yy]$ ]]; then
+        # Создание Backup с текущей датой и временем
+        backup_file="${config_file}.backup_$(date +'%Y-%m-%d_%H-%M-%S')"
+        cp "$config_file" "$backup_file"
+        echo -e "\033[32mBackup создан: $backup_file\033[0m"
+    else
+        echo -e "Backup конфига не создан."
+    fi
+fi
+
 # Вывод итогового конфига (test purpose)
 # echo "$config" | jq .
 
 # Сохранение конфига в файл
-echo "$config" | jq . > /usr/local/etc/xray/config.json
+echo "$config" | jq . > $config_file
 
 ### КОНЕЦ СОЗДАНИЯ КОНФИГА ###
-echo -e "\nКонфиг успешно создан в /usr/local/etc/xray/config.json"
-echo -e "Правила по умолчанию - запрет торрентов, ру трафик блокируется. Измените их при необходимости."
+echo -e "\nКонфиг успешно создан в $config_file"
 echo -e "Тестирую..\n"
 
 # Тестируем конфиг
-config_test=$(xray -test -config /usr/local/etc/xray/config.json) || true
+config_test=$(xray -test -config $config_file) || true
 echo "$config_test"
 
 if ! echo "$config_test" | grep -q 'Configuration OK'; then
@@ -547,6 +766,12 @@ fi
 echo -e "\nКонфиг протестирован успешно."
 
 ### Вывод ссылок
+
+# Проверяем, является ли public_ip IPv6
+if [[ $public_ip =~ ^([0-9a-fA-F]{0,4}:){1,7}[0-9a-fA-F]{0,4}$ ]]; then
+  # Если это IPv6, добавляем квадратные скобки
+  public_ip="[$public_ip]"
+fi
 
 echo -e "Ваши \e[36mссылки\e[0m на подключение:\n"
 main_link="vless://${main_uuid}@${public_ip}:443/?encryption=none&type=tcp&sni=${sni}&fp=chrome&security=reality&alpn=h2&flow=xtls-rprx-vision&pbk=${public_key}&packetEncoding=xudp&sid=${sid}#${remark}"
@@ -623,7 +848,6 @@ wording(){
     raz=" $raz"
   else
     raz=""
-    echo
   fi
 }
 
@@ -656,7 +880,7 @@ else
 fi
 
 # Очистка чувствительных переменных из памяти
-for sensitive_var in priv_and_pub_keys private_key public_key sid; do
+for sensitive_var in priv_and_pub_keys private_key public_key sid secretKey_var; do
   eval "$sensitive_var=\$(head -c 100 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9')"
   unset "$sensitive_var"
 done
