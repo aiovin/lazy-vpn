@@ -133,6 +133,26 @@ urself_ready_sni(){
       fi
       break
   done
+
+  read -p "Желаете изменить параметр 'xver' на '1' и добавить 'fallback' на внутренний порт? [y/N]: " add_fallback
+  if [[ "$add_fallback" =~ ^[Yy]$ ]]; then
+    add_fallback="yes"
+    fallback_port=${sni_dest##*:}
+    echo -n "Ваш порт для fallback: $fallback_port. "
+    read -p "Enter чтобы подтвердить, или введите порт самостоятельно: " custom_fallback_port
+
+    if [[ -n "$custom_fallback_port" ]]; then
+        if [[ "$custom_fallback_port" =~ ^[0-9]+$ ]]; then
+            fallback_port=$custom_fallback_port
+            echo "Порт изменен на '$fallback_port'."
+        else
+            echo "Ошибка: порт должен быть числом. Используется порт по умолчанию '$fallback_port'."
+        fi
+    fi
+    echo "'xver' будет установлен на '1' и добавлен fallback на порт '$fallback_port'."
+  else
+    echo "'xver' остается '0' и fallback добавлен не будет."
+  fi
 echo
 }
 
@@ -169,11 +189,11 @@ setup_caddy() {
     DNS_IP=$(echo -e "$DNS_IPV4\n$DNS_IPV6" | grep -v '^$' | tr '\n' ' ')
 
     # Проверяем, совпадает ли хотя бы один из IP-адресов сервера с DNS-записями
-    if [[ ! "$DNS_IP" =~ "$SERVER_IPV4" ]] && [[ ! "$DNS_IP" =~ "$SERVER_IPV6" ]]; then
+    if [[ ! "$DNS_IP" =~ "$SERVER_IPV4" ]] && [[ ! "$DNS_IP" =~ "$SERVER_IPV6" ]] || [[ -z "$DNS_IP" ]]; then
       echo -e "\nВНИМАНИЕ: DNS-запись для $sni не указывает на IP сервера (IPv4: $SERVER_IPV4, IPv6: $SERVER_IPV6)"
       DNS_IP=${DNS_IP:-none}
       echo "Найденный(е) IP в DNS: $DNS_IP"
-      read -p "Вы уверены, что хотите продолжить? (y/N) " -n 1 -r
+      read -p "Вы уверены, что хотите продолжить? (y/N) "
       echo
       if [[ ! $REPLY =~ ^[Yy]$ ]]; then
         exit 1
@@ -448,19 +468,40 @@ if [[ "$setup_warp" =~ ^[Yy]$ ]]; then
     echo "Новый outbound успешно создан: WARP"
     warp_configured="yes"
 else
+    echo "WARP настроен не будет."
     warp_configured="no"
 fi
 echo
 
 ###
 
-read -p "Создать правило для RU трафика (block/warp)? [Y/n]: " create_ru_rule
+read -p "Хотите добавить новый outbound (только vless reality) для маршрутизации ру-трафика? [y/N]: " add_outbound
+
+if [[ "$add_outbound" =~ ^[Yy]$ ]]; then
+  add_outbound="yes"
+
+  read -p "Введите ip сервера: " new_outbound_address
+  read -p "Введите UUID пользователя: " new_outbound_id
+  read -p "Введите SNI: " new_outbound_serverName
+  read -p "Введите publicKey: " new_outbound_publicKey
+  read -p "Введите shortId: " new_outbound_shortId
+  read -p "Придумайте tag для вашего outbound: " new_outbound_tag
+
+  echo -e "Новый outbound настроен: $new_outbound_tag\n"
+else
+  add_outbound="no"
+  echo -e "Добавление нового outbound пропущено.\n"
+fi
+
+###
+
+read -p "Создать правило для RU трафика (block/warp/$new_outbound_tag)? [Y/n]: " create_ru_rule
 create_ru_rule=${create_ru_rule:-y}
 
 if [[ "$create_ru_rule" =~ ^[Yy]$ ]]; then
-    read -p "Выберите тип правила (block/warp. Enter для - 'block'): " rule_type
+    read -p "Выберите тип правила (block/warp/$new_outbound_tag. Enter для - 'block'): " rule_type
     rule_type=${rule_type:-block}
-    if [[ "$rule_type" != "block" && "$rule_type" != "warp" ]]; then
+    if [[ "$rule_type" != "block" && "$rule_type" != "warp" && "$rule_type" != "$new_outbound_tag" ]]; then
         echo -e "\033[31mОшибка: неверный тип правила. Используется значение по умолчанию - 'block'.\033[0m"
         rule_type="block"
     fi
@@ -468,16 +509,35 @@ if [[ "$create_ru_rule" =~ ^[Yy]$ ]]; then
         echo -e "\033[31mОшибка: Вы не настроили WARP. Используется значение по умолчанию - 'block'.\033[0m"
         rule_type="block"
     fi
+    if [[ "$rule_type" == "new_outbound" && "$add_outbound" == "no" ]]; then
+        echo -e "\033[31mОшибка: Вы не настроили новый outbound. Используется значение по умолчанию - 'block'.\033[0m"
+        rule_type="block"
+    fi
     echo "RU трафик будет отправлен в: $rule_type"
 else
     echo -e "Правило для RU трафика создано не будет."
     rule_type="none"
 fi
-echo
 
 ###
 
-read -p "Желаете добавить домены которые будут заблокированы? (Эта хрень неработает) [y/N]: " block_custom_domains
+if [[ "$add_outbound" == "yes" ]]; then
+  echo
+  read -p "Хотите добавить правило для маршрутизации трафика на YouTube через '$new_outbound_tag'? [y/N]: " add_youtube_routing_rule
+
+  if [[ "$add_youtube_routing_rule" =~ ^[Yy]$ ]]; then
+    add_youtube_routing_rule="yes"
+    echo -e "Создано правило для маршрутизации YouTube на '$new_outbound_tag'."
+  else
+    add_youtube_routing_rule="no"
+    echo -e "Правило для машрутизации YouTube добавлено не будет."
+  fi
+fi
+
+###
+
+echo
+read -p "Желаете добавить домены которые будут заблокированы? [y/N]: " block_custom_domains
 block_custom_domains=${block_custom_domains:-n}
 if [[ "$block_custom_domains" =~ ^[Yy]$ ]]; then
     echo -e "Правило для блокировки доменов будет добавлено."
@@ -586,7 +646,7 @@ config_template='{
         "realitySettings": {
           "show": false,
           "dest": "ur_sni_dest",
-          "xver": 0,
+          "xver": xver_status,
           "serverNames": [
             "ur_sni_server_name"
           ],
@@ -629,13 +689,22 @@ config_template='{
   }
 }'
 
+# Устанавливаем стандартное значние xver
+xver_status="0"
+
+# Проверяем настроен ли fallback
+if [[ "$add_fallback" == "yes" ]]; then
+  xver_status="1"
+fi
+
 # Подстановка значений в шаблон
 config=$(echo "$config_template" | sed \
   -e "s|ur_listen_ip|${listen_ip}|g" \
   -e "s|ur_sni_dest|${sni_dest}|g" \
   -e "s|ur_sni_server_name|${sni}|g" \
   -e "s|ur_private_key|${private_key}|g" \
-  -e "s|ur_sid|${sid}|g")
+  -e "s|ur_sid|${sid}|g" \
+  -e "s|xver_status|${xver_status}|g")
 
 # Вставка массива клиентов в конфиг
 config=$(echo "$config" | jq --argjson clients "$clients_json" '.inbounds[0].settings.clients = $clients')
@@ -722,6 +791,70 @@ if [[ "$warp_configured" == "yes" ]]; then
                 }
             }
         ]')
+fi
+
+# Если добавлен fallback, то добавляем его в streamSettings
+if [[ "$add_fallback" == "yes" ]]; then
+  config=$(echo "$config" | jq --argjson fallback_port "$fallback_port" '
+    .inbounds[0].streamSettings.fallbacks = [{"dest": $fallback_port, "xver": 1}]
+  ')
+fi
+
+# Добавляем новый outboud если есть
+if [[ "$add_outbound" == "yes" ]]; then
+  new_outbound=$(jq -n \
+    --arg address "$new_outbound_address" \
+    --arg id "$new_outbound_id" \
+    --arg serverName "$new_outbound_serverName" \
+    --arg publicKey "$new_outbound_publicKey" \
+    --arg shortId "$new_outbound_shortId" \
+    --arg tag "$new_outbound_tag" \
+    '{
+      "protocol": "vless",
+      "tag": $tag,
+      "settings": {
+        "vnext": [
+          {
+            "address": $address,
+            "port": 443,
+            "users": [
+              {
+                "id": $id,
+                "flow": "xtls-rprx-vision",
+                "encryption": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+          "fingerprint": "chrome",
+          "serverName": $serverName,
+          "publicKey": $publicKey,
+          "shortId": $shortId
+        }
+      }
+    }')
+
+  config=$(echo "$config" | jq --argjson new_outbound "$new_outbound" '.outbounds += [$new_outbound]')
+fi
+
+# Предположим, что конфиг уже сформирован и находится в переменной $config
+if [[ "$add_youtube_routing_rule" == "yes" ]]; then
+  # Формирование нового правила маршрутизации
+  new_routing_rule=$(jq -n \
+    --arg type "field" \
+    --arg outboundTag "$new_outbound_tag" \
+    '{
+      "type": $type,
+      "domain": ["geosite:youtube"],
+      "outboundTag": $outboundTag
+    }')
+
+  config=$(echo "$config" | jq --argjson new_routing_rule "$new_routing_rule" '.routing.rules += [$new_routing_rule]')
 fi
 
 ### КОНЕЦ КОНФИГУРАЦИИ ПРАВИЛ ###
