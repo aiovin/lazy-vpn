@@ -530,7 +530,7 @@ if [[ "$add_outbound" == "yes" ]]; then
     echo -e "Создано правило для маршрутизации YouTube на '$new_outbound_tag'."
   else
     add_youtube_routing_rule="no"
-    echo -e "Правило для машрутизации YouTube добавлено не будет."
+    echo -e "Правило для маршрутизации YouTube добавлено не будет."
   fi
 fi
 
