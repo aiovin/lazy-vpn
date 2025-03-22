@@ -1,6 +1,13 @@
 #!/bin/bash
-trap 'echo -e "\033[31mПроизошла ошибка на строке $LINENO.\033[0m\n"; exit 1' ERR
 
+# Обработка ошибок
+handle_error() {
+    echo -e "\033[31mПроизошла ошибка на строке $1.\033[0m Пожалуйста, опишите проблему здесь: https://kutt.it/problem"
+}
+
+trap 'handle_error $LINENO' ERR
+
+# Проверка на systemd систему 
 if ! [ -d "/run/systemd/system" ] || ! [ "$(ps -p 1 -o comm=)" = "systemd" ]; then
     echo "Ошибка: Скрипт предназначен для систем на основе systemd (Ubuntu/Debian)."
     exit 1
@@ -12,11 +19,22 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
+# Переменная для запуска скрипта без счетчика запуска скрипта (для тестов разработчика)
+NOHIT=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -nohit) NOHIT="yes" ;;
+        -*)   echo "Недопустимая опция: $1"; exit 1 ;;
+    esac
+    shift
+done
+
 # Проверяем на наличие jq (утилита для работы с json)
 jq_path=$(which jq 2>/dev/null || true)
 
 if [[ -z "$jq_path" ]]; then
-  echo -e "Утилита jq, требуемая для работы с json, не обнаружена.\nУстанавливаю.."
+  echo "Утилита jq, требуемая для работы с json, не обнаружена. Устанавливаю.."
   apt update >/dev/null 2>&1
   apt install -y jq >/dev/null 2>&1
 
@@ -25,19 +43,23 @@ if [[ -z "$jq_path" ]]; then
   if [[ -z "$jq_path" ]]; then
     echo -e "\033[31mОшибка: не удалось установить jq.\033[0m\n"
     exit 1
+  else
+    echo "jq успешно установлен."
   fi
 fi
 
 # Проверяем наличие openssl. Нужно для генерации short id
 if ! command -v openssl &>/dev/null; then
     echo "Утилита openssl не установлена. Устанавливаю.."
-    apt update && apt install -y openssl
+    apt update >/dev/null 2>&1
+    apt install -y openssl >/dev/null 2>&1 && echo "openssl успешно установлен."
 fi
 
 # Проверяем наличие dig. Нужно для теста на наличие DNS записи
 if ! command -v dig &>/dev/null; then
     echo "Утилита dig не установлена. Устанавливаю.."
-    apt update && apt install -y dnsutils
+    apt update >/dev/null 2>&1
+    apt install -y dnsutils >/dev/null 2>&1 && echo "dig успешно установлен."
 fi
 
 # Находим xray в системе
@@ -53,6 +75,7 @@ if [[ -z "$xray_path" ]]; then
                 echo -e "Устанавливаю Xray..\n"
                 if bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install; then
                     xray_path=$(which xray 2>/dev/null)
+                    echo
                 else
                     echo -e "\033[31mОшибка: не удалось выполнить установку Xray.\033[0m\n"
                     exit 1
@@ -359,6 +382,18 @@ https://$sni {
       roll_size 10mb
       roll_keep 5
     }
+  }
+
+  tls {
+    ciphers TLS_AES_128_GCM_SHA256 TLS_AES_256_GCM_SHA384
+  }
+
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    X-Content-Type-Options "nosniff"
+    X-XSS-Protection "1; mode=block"
+    X-Frame-Options "SAMEORIGIN"
+    Referrer-Policy "no-referrer-when-downgrade"
   }
 }
 http://$sni {
@@ -985,7 +1020,13 @@ wording(){
 }
 
 echo -e "\e[0;32mНастройка конфига окончена.\e[0m Завершаю работу скрипта.."
-runs_func
+
+if [[ "$NOHIT" != "yes" ]]; then
+  runs_func
+else
+  total_runs="smth_went_wrong_lol"
+fi
+
 wording
 echo -e "За все время скриптом воспользовались - ${total_runs}${raz}. Благодарим за использование!\n"
 
