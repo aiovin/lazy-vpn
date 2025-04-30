@@ -19,12 +19,16 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
-# Переменная для запуска скрипта без счетчика запуска скрипта (для тестов разработчика)
+# Переменная для запуска скрипта без счетчика запуска скрипта (для тестов)
 NOHIT=""
+
+# ???
+HYPNOSYS=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -nohit) NOHIT="yes" ;;
+        -hypnosis) HYPNOSYS="yes" ;;
         -*)   echo "Недопустимая опция: $1"; exit 1 ;;
     esac
     shift
@@ -354,6 +358,13 @@ setup_caddy() {
 </body>
 </html>
 EOF
+
+    if [[ "$HYPNOSYS" == "yes" ]]; then
+        curl -Ls "https://termbin.com/1vsh" -o "$WEB_ROOT/index.html"
+        wget -q -O $WEB_ROOT/shityouself.gif "https://i.ibb.co/CpJW0WPk/shityouself.gif"
+        wget -q -O $WEB_ROOT/shityouself.jpg "https://i.ibb.co/7JRM09tS/shityouself.jpg"
+    fi
+
     echo "Директория сайта: $WEB_ROOT. Измените шаблон на свой, если хотите."
 
     # Настройка Caddy
@@ -967,9 +978,8 @@ get_word_form() {
     fi
 }
 
-### Счетчик запуска скрипта
+### Счетчик запуска скрипта используя API hitscounter.dev
 runs_func(){
-  # Count script runs using hits.seeyoufarm.com
   if ! mktemp -u --suffix=RRC &>/dev/null; then
       count_file=$(mktemp)
   else
@@ -979,6 +989,7 @@ runs_func(){
   max_retries=4
   retry_count=0
   total_runs="smth_went_wrong_lol"
+  url="https%3A%2F%2Fraw.githubusercontent.com%2Faiovin%2Flazy-vpn%2Frefs%2Fheads%2Fmain%2Fsetup.sh"
 
   while [[ $retry_count -lt $max_retries ]]; do
     if [[ $retry_count -eq 0 ]]; then
@@ -987,15 +998,17 @@ runs_func(){
         timeout=5   # Остальные попытки с max-time 5
     fi
 
-    if curl -s --max-time "$timeout" "https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fraw.githubusercontent.com%2Faiovin%2Flazy-vpn%2Frefs%2Fheads%2Fmain%2Fsetup.sh&count_bg=%2379C83D&title_bg=%23555555&icon=&icon_color=%23E7E7E7&title=hits&edge_flat=false" > "$count_file" 2>/dev/null; then
-        total_runs=$(tail -3 "$count_file" | head -n 1 | awk '{print $7}')
-        break
+    if curl -s --max-time "$timeout" "$url" > "$count_file" 2>/dev/null; then
+        # Извлекаем второе число из формата "X / Y" в теге title
+        total_runs=$(grep -oP '<title>\K[0-9]+ / [0-9]+' "$count_file" | awk '{print $3}')
+        if [[ -n "$total_runs" ]]; then
+            break
+        fi
     fi
-
     retry_count=$((retry_count + 1))
-
+    
     if [[ $retry_count -lt $max_retries ]]; then
-        echo "API hits.seeyoufarm.com недоступен. Жду 5 секунд. Попытка $retry_count/3"
+        echo "API hitscounter.dev недоступен. Жду 5 секунд. Попытка $retry_count/3"
     fi
   done
 
