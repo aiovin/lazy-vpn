@@ -989,7 +989,7 @@ runs_func(){
   max_retries=4
   retry_count=0
   total_runs="smth_went_wrong_lol"
-  url="https%3A%2F%2Fraw.githubusercontent.com%2Faiovin%2Flazy-vpn%2Frefs%2Fheads%2Fmain%2Fsetup.sh"
+  url="https://hitscounter.dev/api/hit?url=https%3A%2F%2Fraw.githubusercontent.com%2Faiovin%2Flazy-vpn%2Frefs%2Fheads%2Fmain%2Fsetup.sh"
 
   while [[ $retry_count -lt $max_retries ]]; do
     if [[ $retry_count -eq 0 ]]; then
