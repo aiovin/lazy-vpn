@@ -988,7 +988,7 @@ runs_func(){
 
   max_retries=4
   retry_count=0
-  total_runs="smth_went_wrong_lol"
+  total_runs=""
   url="https://hitscounter.dev/api/hit?url=https%3A%2F%2Fraw.githubusercontent.com%2Faiovin%2Flazy-vpn%2Frefs%2Fheads%2Fmain%2Fsetup.sh"
 
   while [[ $retry_count -lt $max_retries ]]; do
@@ -1008,7 +1008,7 @@ runs_func(){
     retry_count=$((retry_count + 1))
     
     if [[ $retry_count -lt $max_retries ]]; then
-        echo "API hitscounter.dev недоступен. Жду 5 секунд. Попытка $retry_count/3"
+        echo "API hitscounter.dev недоступен. Попытка $retry_count/3.."
     fi
   done
 
@@ -1034,10 +1034,10 @@ wording(){
 
 echo -e "\e[0;32mНастройка конфига окончена.\e[0m Завершаю работу скрипта.."
 
-if [[ "$NOHIT" != "yes" ]]; then
-  runs_func
+if [[ "$NOHIT" == "yes" ]]; then
+  total_runs="disabled"
 else
-  total_runs="smth_went_wrong_lol"
+  runs_func
 fi
 
 wording
