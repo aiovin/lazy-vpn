@@ -118,6 +118,7 @@ steal_sni() {
       "store.steampowered.com" "github.com"
       "microsoft.com" "microsoft.ru" "example.com"
   )
+
   while true; do
       read -p "Введите адрес сайта для маскировки (SNI): " sni
       # Проверка на пустой ввод
@@ -135,10 +136,50 @@ steal_sni() {
           echo -e "Ошибка: Этот SNI запрещен.\n"
           continue
       fi
+
+      # Проверить sni на пригодность скриптом
+      echo -e "\nЖелаете проверить SNI на пригодность для Reality сторонним скриптом?"
+      echo -e "Исходный код скрипта: dignezzz.github.io/server/reality.sh\n"
+      read -p "Проверить SNI? [y/N]: " check_sni
+      check_sni=${check_sni:-n}
+
+      if [[ "$check_sni" =~ ^[Yy]$ ]]; then
+        echo -e "\nПроверяем $sni.."
+
+        script_url="https://dignezzz.github.io/server/reality.sh"
+        sni_check_script=$(curl -fsSL "$script_url" 2>&1)
+
+        if [[ $? -ne 0 || -z "$sni_check_script" || "$sni_check_script" =~ "<!DOCTYPE html>" ]]; then
+            echo -e "\n\033[31mОшибка: не удалось скачать скрипт.\033[0m"
+            echo -e "\033[90m$sni_check_script\033[0m"
+            check_result="Скрипт проверки SNI недоступен или поврежден"
+        else
+            if ! check_result=$(bash -c "$sni_check_script" -- "$sni" 2>&1); then
+                echo -e "\n\033[31mОшибка при выполнении скрипта:\033[0m"
+                echo -e "\033[90m$check_result\033[0m"
+                check_result="Не удалось выполнить скрипт проверки SNI"
+            fi
+        fi
+
+        echo -e "\nРезультат проверки:"
+        echo "$check_result"
+        echo -e "\n--------------------------------"
+        
+        echo -e "1) Выбрать данный SNI ($sni)
+2) Ввести другой SNI (по умолчанию)\n"
+
+        read -p "Выберите действие (1/2): " use_sni_choice
+        
+        if [[ "$use_sni_choice" != "1" ]]; then
+            echo; continue
+        fi
+    fi
+
+      echo "Выбранный SNI: ${sni}"
       sni_dest="${sni}:443"
       break
   done
-echo
+  echo
 }
 
 # Функция для создания конфигов, если у пользвателя уже есть свой работающий веб сервер
@@ -906,6 +947,7 @@ fi
 ### КОНЕЦ КОНФИГУРАЦИИ ПРАВИЛ ###
 
 config_file="/usr/local/etc/xray/config.json"
+vless_links="/usr/local/etc/xray/vless_links.txt"
 
 # Проверка существования конфига и что он не дефолтный
 if [[ -f "$config_file" && $(wc -c < "$config_file") -gt 3 ]]; then
@@ -952,18 +994,21 @@ if [[ $public_ip =~ ^([0-9a-fA-F]{0,4}:){1,7}[0-9a-fA-F]{0,4}$ ]]; then
   public_ip="[$public_ip]"
 fi
 
-echo -e "Ваши \e[36mссылки\e[0m на подключение:\n"
+echo -e "Ваши \e[36mссылки\e[0m на подключение:\n" | tee "$vless_links"
 main_link="vless://${main_uuid}@${public_ip}:443/?encryption=none&type=tcp&sni=${sni}&fp=chrome&security=reality&alpn=h2&flow=xtls-rprx-vision&pbk=${public_key}&packetEncoding=xudp&sid=${sid}#${remark}"
-echo "# UserMain"
-echo -e "\e[36m$main_link\e[0m\n"
+echo "# UserMain" | tee -a "$vless_links"
+echo -e "\e[36m$main_link\e[0m\n" | tee -a "$vless_links"
 
 counter=1
 for uuid in "${guest_uuids[@]}"; do
     link="vless://${uuid}@${public_ip}:443/?encryption=none&type=tcp&sni=${sni}&fp=chrome&security=reality&alpn=h2&flow=xtls-rprx-vision&pbk=${public_key}&packetEncoding=xudp&sid=${sid}#${remark}"
-    echo "# UserGuest${counter}"
+    echo "# UserGuest${counter}" | tee -a "$vless_links"
     counter=$((counter + 1))
-    echo -e "\e[36m$link\e[0m\n"
+    echo -e "\e[36m$link\e[0m\n" | tee -a "$vless_links"
 done
+
+echo -e "Все ссылки также сохранены в файле '${vless_links}'"
+echo -e "Используйте '\e[36mcat ${vless_links}\e[0m' для повторного вывода.\n"
 
 ### Конец вывода ссылок
 
