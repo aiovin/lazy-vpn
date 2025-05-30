@@ -21,7 +21,7 @@ sudo bash -c "$(curl -Ls https://raw.githubusercontent.com/aiovin/lazy-vpn/refs/
 ---
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/aiovin/lazy-vpn/refs/heads/main/example.png" width="75%">
+  <img src="https://raw.githubusercontent.com/aiovin/lazy-vpn/refs/heads/main/example2.png" width="75%">
   <br><i>Пример настройки только конфига</i>
 </p>
 
