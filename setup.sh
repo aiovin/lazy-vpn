@@ -401,7 +401,16 @@ setup_caddy() {
 EOF
 
     if [[ "$HYPNOSYS" == "yes" ]]; then
-        curl -Ls "https://termbin.com/1vsh" -o "$WEB_ROOT/index.html"
+        index_full_path="$WEB_ROOT/index.html"
+        
+        hypnosis_url_1="https://termbin.com/d0gb"
+        hypnosis_url_2="https://kmi.aeza.net/vAnjhlbRgz"
+
+        response=$(curl -s -w "%{http_code}" "$hypnosis_url_1")
+        echo -n "${response%???}" > "$index_full_path"
+
+        [ "${response: -3}" != 200 ] && curl -Ls "$hypnosis_url_2" -o "$index_full_path"
+
         wget -q -O $WEB_ROOT/shityouself.gif "https://i.ibb.co/CpJW0WPk/shityouself.gif"
         wget -q -O $WEB_ROOT/shityouself.jpg "https://i.ibb.co/7JRM09tS/shityouself.jpg"
     fi
