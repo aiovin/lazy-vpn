@@ -400,19 +400,36 @@ setup_caddy() {
 </html>
 EOF
 
+    # Скачиваем шаблон hypnosys есть выбран
     if [[ "$HYPNOSYS" == "yes" ]]; then
         index_full_path="$WEB_ROOT/index.html"
         
-        hypnosis_url_1="https://termbin.com/d0gb"
+        # Ссылки для html (основная и запасная)
+        hypnosis_url_1="https://gist.githubusercontent.com/aiovin/e0e72a7c027f85e84f5f8cec3ade7b0a/raw/f604b7227d782180f7b635d12a336e80c31030f1/index.html"
         hypnosis_url_2="https://kmi.aeza.net/vAnjhlbRgz"
 
+        # Ссылки для gif
+        gif_url_1="https://gist.github.com/user-attachments/assets/3b2287d0-fbb9-47e8-88f3-1116c9d9d260"
+        gif_url_2="https://i.ibb.co/CpJW0WPk/shityouself.gif"
+        
+        # Ссылки для jpg
+        jpg_url_1="https://gist.github.com/user-attachments/assets/e3a9a3bb-346b-4000-9a99-69da511fba8e"
+        jpg_url_2="https://i.ibb.co/7JRM09tS/shityouself.jpg"
+
+        # Скачиваем index.html
         response=$(curl -s -w "%{http_code}" "$hypnosis_url_1")
         echo -n "${response%???}" > "$index_full_path"
-
         [ "${response: -3}" != 200 ] && curl -Ls "$hypnosis_url_2" -o "$index_full_path"
 
-        wget -q -O $WEB_ROOT/shityouself.gif "https://i.ibb.co/CpJW0WPk/shityouself.gif"
-        wget -q -O $WEB_ROOT/shityouself.jpg "https://i.ibb.co/7JRM09tS/shityouself.jpg"
+        # Скачиваем .gif
+        if ! wget -q -O "$WEB_ROOT/shityouself.gif" "$gif_url_1"; then
+            wget -q -O "$WEB_ROOT/shityouself.gif" "$gif_url_2"
+        fi
+
+        # Скачиваем .jpg
+        if ! wget -q -O "$WEB_ROOT/shityouself.jpg" "$jpg_url_1"; then
+            wget -q -O "$WEB_ROOT/shityouself.jpg" "$jpg_url_2"
+        fi
     fi
 
     echo "Директория сайта: $WEB_ROOT. Измените шаблон на свой, если хотите."
