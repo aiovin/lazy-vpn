@@ -24,11 +24,13 @@ NOHIT=""
 
 # ???
 HYPNOSYS=""
+THREEBODY=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -nohit) NOHIT="yes" ;;
         -hypnosis) HYPNOSYS="yes" ;;
+        -3bp) THREEBODY="yes" ;;
         -*)   echo "Недопустимая опция: $1"; exit 1 ;;
     esac
     shift
@@ -330,6 +332,8 @@ setup_caddy() {
     sudo mkdir -p "$WEB_ROOT"
 
     echo "Создаю ваш сайт.."
+
+    # Шаблон по-умолчанию - Матрица
     cat <<'EOF' | sudo tee "$WEB_ROOT/index.html" > /dev/null
 <!DOCTYPE html>
 <html lang="en">
@@ -406,7 +410,7 @@ EOF
         
         # Ссылки для html (основная и запасная)
         hypnosis_url_1="https://gist.githubusercontent.com/aiovin/e0e72a7c027f85e84f5f8cec3ade7b0a/raw/f604b7227d782180f7b635d12a336e80c31030f1/index.html"
-        hypnosis_url_2="https://kmi.aeza.net/vAnjhlbRgz"
+        hypnosis_url_2="https://pastebin.com/raw/p0zbJtyP"
 
         # Ссылки для gif
         gif_url_1="https://gist.github.com/user-attachments/assets/3b2287d0-fbb9-47e8-88f3-1116c9d9d260"
@@ -430,6 +434,20 @@ EOF
         if ! wget -q -O "$WEB_ROOT/shityouself.jpg" "$jpg_url_1"; then
             wget -q -O "$WEB_ROOT/shityouself.jpg" "$jpg_url_2"
         fi
+    fi
+
+    # Скачиваем шаблон 3 Body если выбран
+    if [[ "$THREEBODY" == "yes" ]]; then
+        index_full_path="$WEB_ROOT/index.html"
+        
+        # Ссылки для html (основная и запасная)
+        threebody_url_1="https://gist.githubusercontent.com/aiovin/bd1e065b9dae7360867182fb77df3bfc/raw/3d7fb097005e6ce989c7a881dbdeab4c2f2a5fbf/index.html"
+        threebody_url_2="https://pastebin.com/raw/V4bhU089"
+
+        # Скачиваем index.html
+        response=$(curl -s -w "%{http_code}" "$threebody_url_1")
+        echo -n "${response%???}" > "$index_full_path"
+        [ "${response: -3}" != 200 ] && curl -Ls "$threebody_url_2" -o "$index_full_path"
     fi
 
     echo "Директория сайта: $WEB_ROOT. Измените шаблон на свой, если хотите."
