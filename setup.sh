@@ -1,8 +1,8 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Обработка ошибок
 handle_error() {
-    echo -e "\033[31mПроизошла ошибка на строке $1.\033[0m Пожалуйста, опишите проблему здесь: https://kutt.it/problem"
+    echo -e "\033[31mПроизошла ошибка на строке $1.\033[0m Пожалуйста, опишите проблему здесь: https://shorturl.at/Jxhb4"
 }
 
 trap 'handle_error $LINENO' ERR
@@ -530,8 +530,8 @@ echo -e "Начинаем настройку конфига xray (vless reality)
 # Генерация публичного и приватного ключа
 priv_and_pub_keys=$(xray x25519)
 
-private_key=$(echo "$priv_and_pub_keys" | grep 'Private key:' | awk '{print $3}')
-public_key=$(echo "$priv_and_pub_keys" | grep 'Public key:' | awk '{print $3}')
+private_key=$(echo "$priv_and_pub_keys" | grep 'PrivateKey' | awk '{print $2}')
+public_key=$(echo "$priv_and_pub_keys" | grep 'PublicKey' | awk '{print $3}')
 
 # Генерация short id
 sid=$(openssl rand -hex 8)
@@ -540,7 +540,7 @@ sid=$(openssl rand -hex 8)
 main_uuid=$(xray uuid)
 
 # Спрашиваем сколько генерировать дополнительных конфигов
-read -p "Укажите сколько потребуется дополнительных ссылок на подключение (Enter для '1' - это минимум): " uuid_count
+read -p "Укажите сколько потребуется дополнительных ссылок на подключение (Enter чтобы оставить '1' - это минимум): " uuid_count
 if [[ -z "$uuid_count" ]]; then
     uuid_count=1
 fi
@@ -756,6 +756,9 @@ clients_json=$(echo "$guests_json" | jq --arg uuid "$main_uuid" '[
 
 # Шаблон конфига
 config_template='{
+  "dns": {
+    "servers": ["1.1.1.1", "8.8.8.8"]
+  },
   "log": {
     "loglevel": "info",
     "access": "/var/log/xray/access.log",
@@ -962,7 +965,7 @@ if [[ "$add_outbound" == "yes" ]]; then
         "network": "tcp",
         "security": "reality",
         "realitySettings": {
-          "fingerprint": "chrome",
+          "fingerprint": "firefox",
           "serverName": $serverName,
           "publicKey": $publicKey,
           "shortId": $shortId
@@ -1024,7 +1027,7 @@ config_test=$(xray -test -config $config_file) || true
 echo "$config_test"
 
 if ! echo "$config_test" | grep -q 'Configuration OK'; then
-    echo -e "\nОшибка в конфигурации. Возможно, он больше не актуален.\nПожалуйста, напишите о проблеме сюда: https://kutt.it/problem\n"
+    echo -e "\nОшибка в конфигурации. Возможно, он больше не актуален.\nПожалуйста, напишите о проблеме сюда: https://shorturl.at/Jxhb4\n"
     exit 1
 fi
 
@@ -1039,13 +1042,13 @@ if [[ $public_ip =~ ^([0-9a-fA-F]{0,4}:){1,7}[0-9a-fA-F]{0,4}$ ]]; then
 fi
 
 echo -e "Ваши \e[36mссылки\e[0m на подключение:\n" | tee "$vless_links"
-main_link="vless://${main_uuid}@${public_ip}:443/?encryption=none&type=tcp&sni=${sni}&fp=chrome&security=reality&alpn=h2&flow=xtls-rprx-vision&pbk=${public_key}&packetEncoding=xudp&sid=${sid}#${remark}"
+main_link="vless://${main_uuid}@${public_ip}:443/?encryption=none&type=tcp&sni=${sni}&fp=firefox&security=reality&alpn=h2&flow=xtls-rprx-vision&pbk=${public_key}&packetEncoding=xudp&sid=${sid}#${remark}"
 echo "# UserMain" | tee -a "$vless_links"
 echo -e "\e[36m$main_link\e[0m\n" | tee -a "$vless_links"
 
 counter=1
 for uuid in "${guest_uuids[@]}"; do
-    link="vless://${uuid}@${public_ip}:443/?encryption=none&type=tcp&sni=${sni}&fp=chrome&security=reality&alpn=h2&flow=xtls-rprx-vision&pbk=${public_key}&packetEncoding=xudp&sid=${sid}#${remark}"
+    link="vless://${uuid}@${public_ip}:443/?encryption=none&type=tcp&sni=${sni}&fp=firefox&security=reality&alpn=h2&flow=xtls-rprx-vision&pbk=${public_key}&packetEncoding=xudp&sid=${sid}#${remark}"
     echo "# UserGuest${counter}" | tee -a "$vless_links"
     counter=$((counter + 1))
     echo -e "\e[36m$link\e[0m\n" | tee -a "$vless_links"
