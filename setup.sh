@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
 
-# Обработка ошибок
-handle_error() {
-    echo -e "\033[31mПроизошла ошибка на строке $1.\033[0m Пожалуйста, опишите проблему здесь: https://shorturl.at/Jxhb4"
+usage() {
+    echo "Usage: ${0##*/} [-h --help] [--no-hit] [--hypnosis] [--3bp]
+Шаблон для self steal по-умолчанию - Матрица"
 }
-
-trap 'handle_error $LINENO' ERR
 
 # Проверка на systemd систему 
 if ! [ -d "/run/systemd/system" ] || ! [ "$(ps -p 1 -o comm=)" = "systemd" ]; then
@@ -13,28 +11,29 @@ if ! [ -d "/run/systemd/system" ] || ! [ "$(ps -p 1 -o comm=)" = "systemd" ]; th
     exit 1
 fi
 
-# Скрипт требует права root т.к. работает с установкой пакетов как и xray при установке из скрипта
-if [ "$(id -u)" -ne 0 ]; then
-  echo "Ошибка: Скрипт нужно запускать от имени root или с root привилегиями." 
-  exit 1
-fi
-
 # Переменная для запуска скрипта без счетчика запуска скрипта (для тестов)
 NOHIT=""
 
-# ???
+# Шаблоны self steal
 HYPNOSYS=""
 THREEBODY=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        -nohit) NOHIT="yes" ;;
-        -hypnosis) HYPNOSYS="yes" ;;
-        -3bp) THREEBODY="yes" ;;
-        -*)   echo "Недопустимая опция: $1"; exit 1 ;;
+        -h|-help|--help)      usage; exit 0 ;;
+        -nohit|--no-hit)      NOHIT="yes" ;;
+        -hypnosis|--hypnosis) HYPNOSYS="yes" ;;
+        -3bp|--3bp)           THREEBODY="yes" ;;
+        -*) echo "Недопустимая опция: $1"; exit 1 ;;
     esac
     shift
 done
+
+# Скрипт требует права root т.к. работает с установкой пакетов как и xray при установке из скрипта
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Ошибка: Скрипт нужно запускать от имени root или с root привилегиями." 
+  exit 1
+fi
 
 # Проверяем на наличие jq (утилита для работы с json)
 jq_path=$(which jq 2>/dev/null || true)
@@ -128,11 +127,9 @@ steal_sni() {
           echo -e "Ошибка: Введено пустое значение. Пожалуйста, введите адрес сайта.\n"
           continue
       fi
-      # Проверка, что sni не начинается с 'www'
-      if [[ "$sni" == www* ]]; then
-        sni="${sni#www.}"
-        echo -e "Удалено 'www' из SNI. Будет использовано: $sni\n"
-      fi
+      # Очищаем sni
+      v="${sni#http://}"; v="${v#https://}"; v="${v#www.}"; sni="${v%/}"
+
       # Проверка, что не введен sni из банлиста
       if [[ " ${forbidden_sni[@]} " =~ " ${sni} " ]]; then
           echo -e "Ошибка: Этот SNI запрещен.\n"
@@ -145,7 +142,7 @@ steal_sni() {
       read -p "Проверить SNI? [y/N]: " check_sni
       check_sni=${check_sni:-n}
 
-      if [[ "$check_sni" =~ ^[Yy]$ ]]; then
+      if [[ "$check_sni" =~ ^[Yy](es)?$ ]]; then
         echo -e "\nПроверяем $sni.."
 
         script_url="https://dignezzz.github.io/server/reality.sh"
@@ -205,7 +202,7 @@ urself_ready_sni(){
   done
 
   read -p "Желаете изменить параметр 'xver' на '1' и добавить 'fallback' на внутренний порт? [y/N]: " add_fallback
-  if [[ "$add_fallback" =~ ^[Yy]$ ]]; then
+  if [[ "$add_fallback" =~ ^[Yy](es)?$ ]]; then
     add_fallback="yes"
     fallback_port=${sni_dest##*:}
     echo -n "Ваш порт для fallback: $fallback_port. "
@@ -265,7 +262,7 @@ setup_caddy() {
       echo "Найденный(е) IP в DNS: $DNS_IP"
       read -p "Вы уверены, что хотите продолжить? (y/N) "
       echo
-      if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+      if [[ ! $REPLY =~ ^[Yy](es)?$ ]]; then
         exit 1
       fi
     fi
@@ -524,6 +521,8 @@ choose_setup() {
 }
 
 # Начало работы скрипта
+printf '\033[H\033[2J'
+
 choose_setup
 echo -e "Начинаем настройку конфига xray (vless reality).\n"
 
@@ -556,14 +555,19 @@ for ((i=0; i<uuid_count; i++)); do
     guest_uuids+=("$uuid")
 done
 
-# Создадим файлы логов если их еще нет
+# Создаем файлы логов
 mkdir -p /var/log/xray && mkdir -p /var/log/xray
 
-# Проверка успешности создания файла логов
+chown xray:xray /var/log/xray
+chmod 700 /var/log/xray
+
 if ! touch /var/log/xray/access.log /var/log/xray/error.log; then
     echo -e "\033[31mОшибка: не удалось создать файлы логов xray.\033[0m\n"
     exit 1
 fi
+
+chown xray:xray /var/log/xray/access.log /var/log/xray/error.log
+chmod 600 /var/log/xray/access.log /var/log/xray/error.log
 
 ### СОЗДАНИЕ XRAY КОНФИГА ###
 
@@ -571,7 +575,7 @@ fi
 
 read -p "Добавить правило для блокировки BitTorrent? [Y/n]: " block_bittorrent
 block_bittorrent=${block_bittorrent:-y}
-if [[ "$block_bittorrent" =~ ^[Yy]$ ]]; then
+if [[ "$block_bittorrent" =~ ^[Yy](es)?$ ]]; then
     echo -e "Правило для блокировки BitTorrent будет добавлено.\n"
     block_bittorrent="yes"
 else
@@ -584,7 +588,7 @@ fi
 read -p "Настроить WARP (для использования в правилах)? [y/N]: " setup_warp
 setup_warp=${setup_warp:-n}
 
-if [[ "$setup_warp" =~ ^[Yy]$ ]]; then
+if [[ "$setup_warp" =~ ^[Yy](es)?$ ]]; then
     echo -e "\nНастройка WARP:"
     read -p "Введите secretKey: " secretKey_var
     while [[ -z "$secretKey_var" ]]; do read -p "Повторите ввод: " secretKey_var; done
@@ -608,7 +612,7 @@ echo
 
 read -p "Хотите добавить новый outbound (только vless reality) для маршрутизации ру-трафика? [y/N]: " add_outbound
 
-if [[ "$add_outbound" =~ ^[Yy]$ ]]; then
+if [[ "$add_outbound" =~ ^[Yy](es)?$ ]]; then
   add_outbound="yes"
 
   read -p "Введите ip сервера: " new_outbound_address
@@ -629,7 +633,7 @@ fi
 read -p "Создать правило для RU трафика (block/warp/$new_outbound_tag)? [Y/n]: " create_ru_rule
 create_ru_rule=${create_ru_rule:-y}
 
-if [[ "$create_ru_rule" =~ ^[Yy]$ ]]; then
+if [[ "$create_ru_rule" =~ ^[Yy](es)?$ ]]; then
     read -p "Выберите тип правила (block/warp/$new_outbound_tag. Enter для - 'block'): " rule_type
     rule_type=${rule_type:-block}
     if [[ "$rule_type" != "block" && "$rule_type" != "warp" && "$rule_type" != "$new_outbound_tag" ]]; then
@@ -656,7 +660,7 @@ if [[ "$add_outbound" == "yes" ]]; then
   echo
   read -p "Хотите добавить правило для маршрутизации трафика на YouTube через '$new_outbound_tag'? [y/N]: " add_youtube_routing_rule
 
-  if [[ "$add_youtube_routing_rule" =~ ^[Yy]$ ]]; then
+  if [[ "$add_youtube_routing_rule" =~ ^[Yy](es)?$ ]]; then
     add_youtube_routing_rule="yes"
     echo -e "Создано правило для маршрутизации YouTube на '$new_outbound_tag'."
   else
@@ -670,7 +674,7 @@ fi
 echo
 read -p "Желаете добавить домены которые будут заблокированы? [y/N]: " block_custom_domains
 block_custom_domains=${block_custom_domains:-n}
-if [[ "$block_custom_domains" =~ ^[Yy]$ ]]; then
+if [[ "$block_custom_domains" =~ ^[Yy](es)?$ ]]; then
     echo -e "Правило для блокировки доменов будет добавлено."
     read -p "Введите домены (через пробел): " custom_warp_domains
     if [[ -n "$domains_to_block" ]]; then
@@ -690,7 +694,7 @@ if [[ "$warp_configured" == "yes" ]]; then
     read -p "Желаете добавить домены, которые будут отправлены в WARP? [y/N]: " warp_custom_domains
     warp_custom_domains=${warp_custom_domains:-n}
 
-    if [[ "$warp_custom_domains" =~ ^[Yy]$ ]]; then
+    if [[ "$warp_custom_domains" =~ ^[Yy](es)?$ ]]; then
         echo -e "Дополнительное правило для WARP будет добавлено."
         read -p "Введите домены (через пробел): " custom_warp_domains
 
@@ -857,7 +861,7 @@ if [[ "$block_bittorrent" == "yes" ]]; then
 fi
 
 # Добавляем правило для блокировки доменов, если они указаны
-if [[ "$block_custom_domains" =~ ^[Yy]$ && -n "$domains_to_block" ]]; then
+if [[ "$block_custom_domains" =~ ^[Yy](es)?$ && -n "$domains_to_block" ]]; then
     config=$(echo "$config" | jq --argjson domains_to_block "$domains_to_block_json" '
         .routing.rules += [
             {
@@ -883,7 +887,7 @@ if [[ "$warp_configured" == "yes" && -n "$custom_warp_domains" ]]; then
 fi
 
 # Добавляем правила для RU трафика если выбрано да
-if [[ "$create_ru_rule" =~ ^[Yy]$ ]]; then
+if [[ "$create_ru_rule" =~ ^[Yy](es)?$ ]]; then
     config=$(echo "$config" | jq --arg rule_type "$rule_type" '.routing.rules += [
         {
             "type": "field",
@@ -1002,7 +1006,7 @@ if [[ -f "$config_file" && $(wc -c < "$config_file") -gt 3 ]]; then
     read -p "Создать Backup текущего конфига? [Y/n]: " make_backup
     make_backup=${make_backup:-y}
 
-    if [[ "$make_backup" =~ ^[Yy]$ ]]; then
+    if [[ "$make_backup" =~ ^[Yy](es)?$ ]]; then
         # Создание Backup с текущей датой и временем
         backup_file="${config_file}.backup_$(date +'%Y-%m-%d_%H-%M-%S')"
         cp "$config_file" "$backup_file"
