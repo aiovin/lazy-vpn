@@ -791,7 +791,6 @@ config_template='{
           "privateKey": "ur_private_key",
           "minClientVer": "",
           "maxClientVer": "",
-          "maxTimeDiff": 0,
           "shortIds": ["ur_sid"]
         }
       },
